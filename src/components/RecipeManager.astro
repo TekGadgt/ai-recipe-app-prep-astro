@@ -528,12 +528,10 @@
     const recipe = currentRecipes.find((r) => r.id === recipeId);
     if (!recipe) return;
 
-    if (confirm(`Delete recipe "${recipe.title}"?`)) {
-      RecipeStorage.remove(recipeId);
-      loadRecipes();
+    RecipeStorage.remove(recipeId);
+    loadRecipes();
 
-      // TODO: Broadcast recipe removal via WebSocket
-    }
+    // TODO: Broadcast recipe removal via WebSocket
   };
 
   // Utility function to escape HTML
