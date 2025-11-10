@@ -233,7 +233,17 @@
 
   // Load recipes from storage
   function loadRecipes() {
+    console.log("DEBUGGING: loadRecipes called");
     currentRecipes = RecipeStorage.get();
+    console.log(
+      "DEBUGGING: Loaded recipes from storage:",
+      currentRecipes.length,
+      "recipes"
+    );
+    console.log(
+      "DEBUGGING: Recipe votes:",
+      currentRecipes.map((r) => ({ title: r.title, votes: r.votes }))
+    );
     // Reapply current sort order
     applySorting();
     updateRecipesDisplay();
@@ -320,7 +330,11 @@
         statusDiv.classList.add("hidden");
       }, 2000);
 
-      // TODO: Broadcast new recipe via WebSocket
+      // Broadcast new recipe via WebSocket
+      const wsManager = window.getWebSocketManager?.();
+      if (wsManager && wsManager.isConnected && recipe) {
+        wsManager.addRecipe(recipe);
+      }
     } catch (error) {
       console.error("Recipe generation error:", error);
       window.showError?.(`Failed to generate recipe: ${error.message}`);
@@ -515,12 +529,18 @@
     const currentVote = VoteStorage.getUserVote(recipeId, currentUser.id);
     const newVote = currentVote === voteType ? "neutral" : voteType;
 
+    // Update local vote storage for UI state (button highlighting)
     VoteStorage.vote(recipeId, currentUser.id, newVote);
 
-    // Reload recipes to update vote counts
-    loadRecipes();
-
-    // TODO: Broadcast vote via WebSocket
+    // Broadcast vote via WebSocket - server will calculate total votes and broadcast back
+    const wsManager = window.getWebSocketManager?.();
+    if (wsManager && wsManager.isConnected) {
+      wsManager.voteRecipe(recipeId, newVote);
+      // Don't reload recipes here - wait for server response via WebSocket
+    } else {
+      // Fallback for offline mode - reload recipes locally
+      loadRecipes();
+    }
   };
 
   // Remove recipe
@@ -531,7 +551,11 @@
     RecipeStorage.remove(recipeId);
     loadRecipes();
 
-    // TODO: Broadcast recipe removal via WebSocket
+    // Broadcast recipe removal via WebSocket
+    const wsManager = window.getWebSocketManager?.();
+    if (wsManager && wsManager.isConnected) {
+      wsManager.removeRecipe(recipeId);
+    }
   };
 
   // Utility function to escape HTML
@@ -547,4 +571,9 @@
   // Expose functions for other components
   window.refreshRecipes = loadRecipes;
   window.getRecipes = () => currentRecipes;
+
+  // Global function for WebSocket sync manager
+  window.updateRecipesDisplay = function () {
+    loadRecipes();
+  };
 </script>

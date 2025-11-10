@@ -48,10 +48,6 @@ const { title, description = "Collaborative recipe generation web app" } =
         <div class="container">
           <div class="header-content">
             <a href="/" class="logo">Pantry Party</a>
-            <div class="session-info" id="session-status">
-              <span class="status-indicator status-disconnected"></span>
-              <span>Not connected</span>
-            </div>
           </div>
         </div>
       </header>
@@ -63,23 +59,5 @@ const { title, description = "Collaborative recipe generation web app" } =
 
     <!-- Global scripts -->
     <script src="/scripts/storage.js" type="module"></script>
-    <script>
-      // Initialize session status display
-      function updateSessionStatus() {
-        const statusElement = document.getElementById("session-status");
-        if (!statusElement) return;
-
-        // This will be enhanced with WebSocket connection status
-        const indicator = statusElement.querySelector(".status-indicator");
-        const text = statusElement.querySelector("span:last-child");
-
-        // For now, show disconnected status
-        indicator.className = "status-indicator status-disconnected";
-        text.textContent = "Not connected";
-      }
-
-      // Update status on page load
-      document.addEventListener("DOMContentLoaded", updateSessionStatus);
-    </script>
   </body>
 </html>

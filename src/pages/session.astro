@@ -62,7 +62,7 @@ import SessionControls from "../components/SessionControls.astro";
                 rows="3"
                 maxlength="500"></textarea>
               <div
-                style="display: flex; justify-content: between; align-items: center; margin-top: 0.5rem;"
+                style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem;"
               >
                 <div style="font-size: 0.75rem; color: #6b7280;">
                   <span id="context-char-count">0</span>/500 characters
@@ -239,10 +239,17 @@ import SessionControls from "../components/SessionControls.astro";
     UserStorage,
     SessionStorage,
     ContextStorage,
+    IngredientsStorage,
+    BlacklistStorage,
+    RecipeStorage,
   } from "/scripts/storage.js";
+  import { WebSocketManager, SessionSyncManager } from "/scripts/websocket.js";
 
   let currentSession = null;
   let currentUser = null;
+  let wsManager = null;
+  let syncManager = null;
+  let isHost = false;
 
   // Show error modal
   window.showError = function (message) {
@@ -292,9 +299,15 @@ import SessionControls from "../components/SessionControls.astro";
   function initializeSession() {
     const urlParams = new URLSearchParams(window.location.search);
     const sessionCode = urlParams.get("code");
-    const isHost = urlParams.get("host") === "true";
+    isHost = urlParams.get("host") === "true";
     const isParticipant = urlParams.has("participant");
     const isContinuing = urlParams.get("continue") === "true";
+
+    // Global sync state to prevent race conditions
+    window.syncState = {
+      syncing: false,
+      pendingOperations: new Set(),
+    };
 
     if (!sessionCode) {
       showError("No session code provided");
@@ -309,39 +322,156 @@ import SessionControls from "../components/SessionControls.astro";
       return;
     }
 
+    // Initialize WebSocket connection
+    initializeWebSocket();
+
     if (isHost || isContinuing) {
-      // Load existing session
+      // Load existing session from localStorage
       currentSession = SessionStorage.get();
       if (!currentSession || currentSession.id !== sessionCode) {
         showError("Session not found or expired");
         setTimeout(() => (window.location.href = "/"), 2000);
         return;
       }
+
+      // Create WebSocket session as host
+      wsManager.createSession(sessionCode, currentUser.id, currentUser.name);
     } else {
-      // TODO: Implement WebSocket session joining logic
-      // For now, create a mock session for the participant
-      showError("Session joining will be implemented with WebSocket support");
-      return;
+      // Join existing WebSocket session as participant
+      wsManager.joinSession(sessionCode, currentUser.id, currentUser.name);
     }
 
     updateSessionDisplay();
     loadContext();
   }
 
+  // Initialize WebSocket connection and sync manager
+  function initializeWebSocket() {
+    wsManager = new WebSocketManager();
+
+    const storageProxy = {
+      ...SessionStorage,
+      ...ContextStorage,
+      clearSession: () => SessionStorage.clear(),
+      setSessionInfo: (id, hostId, hostName) => {
+        SessionStorage.update({ id, hostId, hostName });
+      },
+      // Add ingredient storage methods
+      addIngredient: (name, addedBy, id = null) => {
+        if (id) {
+          // When ID is provided (from server), use it directly
+          return IngredientsStorage.addWithId({ name, addedBy, id });
+        } else {
+          // Normal local addition
+          return IngredientsStorage.add({ name, addedBy });
+        }
+      },
+      removeIngredient: (ingredientId) =>
+        IngredientsStorage.remove(ingredientId),
+      getIngredients: () => IngredientsStorage.get(),
+      clearIngredients: () => IngredientsStorage.clear(),
+      // Add blacklist storage methods
+      addToBlacklist: (ingredient) => BlacklistStorage.add(ingredient),
+      removeFromBlacklist: (ingredient) => BlacklistStorage.remove(ingredient),
+      getBlacklist: () => BlacklistStorage.get(),
+      clearBlacklist: () => BlacklistStorage.clear(),
+      // Add recipe storage methods
+      addRecipe: (recipe) => RecipeStorage.add(recipe),
+      removeRecipe: (recipeId) => RecipeStorage.remove(recipeId),
+      getRecipes: () => RecipeStorage.get(),
+      clearRecipes: () => RecipeStorage.clear(),
+      setRecipes: (recipes) => RecipeStorage.set(recipes),
+    };
+
+    syncManager = new SessionSyncManager(wsManager, storageProxy);
+
+    // Setup WebSocket event handlers
+    wsManager.on("connection:open", handleWebSocketOpen);
+    wsManager.on("connection:close", handleWebSocketClose);
+    wsManager.on("connection:error", handleWebSocketError);
+    wsManager.on("session:created", handleSessionCreated);
+    wsManager.on("session:joined", handleSessionJoined);
+    wsManager.on("session:error", handleSessionError);
+  }
+
+  // WebSocket event handlers
+  function handleWebSocketOpen() {
+    console.log("WebSocket connected");
+    updateConnectionStatus(true);
+  }
+
+  function handleWebSocketClose() {
+    console.log("WebSocket disconnected");
+    updateConnectionStatus(false);
+  }
+
+  function handleWebSocketError(error) {
+    console.error("WebSocket error:", error);
+    showError("Connection error. Please refresh the page.");
+  }
+
+  function handleSessionCreated(message) {
+    currentSession = message.session;
+    updateSessionDisplay();
+  }
+
+  function handleSessionJoined(message) {
+    currentSession = message.session;
+    updateSessionDisplay();
+    loadContext();
+  }
+
+  function handleSessionError(message) {
+    showError(message.message);
+    if (
+      message.message.includes("not found") ||
+      message.message.includes("expired")
+    ) {
+      setTimeout(() => (window.location.href = "/"), 3000);
+    }
+  }
+
+  // Update connection status indicator
+  function updateConnectionStatus(connected) {
+    const sessionDetails = document.getElementById("session-details");
+    if (!sessionDetails) return;
+
+    const statusIndicator = connected
+      ? '<span style="color: #10b981;">● Connected</span>'
+      : '<span style="color: #ef4444;">● Disconnected</span>';
+
+    if (currentSession) {
+      sessionDetails.innerHTML = `
+        ${statusIndicator} • 
+        <strong>Code:</strong> ${currentSession.id} • 
+        <strong>Host:</strong> ${currentSession.hostName} • 
+        <strong>Created:</strong> ${new Date(currentSession.createdAt).toLocaleTimeString()}
+      `;
+    } else {
+      sessionDetails.innerHTML = statusIndicator;
+    }
+  }
+
   // Update session display
   function updateSessionDisplay() {
     if (!currentSession) return;
+
+    const connected = wsManager && wsManager.isConnected;
+    const statusIndicator = connected
+      ? '<span style="color: #10b981;">● Connected</span>'
+      : '<span style="color: #ef4444;">● Disconnected</span>';
 
     const sessionDetails = document.getElementById("session-details");
     const participantCount = document.getElementById("participant-count");
 
     sessionDetails.innerHTML = `
+      ${statusIndicator} • 
       <strong>Code:</strong> ${currentSession.id} • 
       <strong>Host:</strong> ${currentSession.hostName} • 
       <strong>Created:</strong> ${new Date(currentSession.createdAt).toLocaleTimeString()}
     `;
 
-    participantCount.textContent = `${currentSession.participants.length} participant(s)`;
+    participantCount.textContent = `${currentSession.participants?.length || 1} participant(s)`;
 
     // Set up share modal
     document.getElementById("session-code-display").value = currentSession.id;
@@ -365,6 +495,11 @@ import SessionControls from "../components/SessionControls.astro";
     const context = document.getElementById("cooking-context").value.trim();
     ContextStorage.set(context);
 
+    // Broadcast context change via WebSocket
+    if (wsManager && wsManager.isConnected) {
+      wsManager.updateContext(context);
+    }
+
     // Show feedback
     const button = e.target.querySelector("button");
     const originalText = button.textContent;
@@ -377,8 +512,6 @@ import SessionControls from "../components/SessionControls.astro";
       button.classList.remove("btn-success");
       button.classList.add("btn-secondary");
     }, 2000);
-
-    // TODO: Broadcast context change via WebSocket
   });
 
   // Context character count
@@ -402,7 +535,40 @@ import SessionControls from "../components/SessionControls.astro";
     }
   });
 
-  // Expose functions for components
+  // Global functions for components and refresh utilities
   window.getCurrentSession = () => currentSession;
   window.getCurrentUser = () => currentUser;
+  window.getWebSocketManager = () => wsManager;
+  window.getSyncManager = () => syncManager;
+  window.isSessionHost = () => isHost;
+
+  // UI refresh functions called by sync manager
+  window.updateParticipantsList = (participants) => {
+    // Update the session participants data
+    if (currentSession) {
+      currentSession.participants = participants;
+    }
+
+    // Update participant count in header
+    const participantCount = document.getElementById("participant-count");
+    if (participantCount) {
+      participantCount.textContent = `${participants.length} participant(s)`;
+    }
+
+    // Update participant list in session controls if function exists
+    if (typeof window.loadParticipants === "function") {
+      window.loadParticipants();
+    }
+  };
+
+  window.updateContextDisplay = () => {
+    loadContext();
+  };
+
+  window.updateHostControls = (isHost, allowRecipeGeneration) => {
+    // This will be handled by SessionControls component
+    if (typeof window.refreshSessionControls === "function") {
+      window.refreshSessionControls(isHost, allowRecipeGeneration);
+    }
+  };
 </script>

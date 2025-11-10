@@ -253,15 +253,42 @@
 
   // Add ingredient
   function addIngredient(ingredientName) {
-    console.log("Adding ingredient:", ingredientName);
+    console.log(
+      "Adding ingredient:",
+      ingredientName,
+      "Type:",
+      typeof ingredientName
+    );
 
-    if (!ingredientName.trim()) {
+    // Check if we're currently syncing to prevent race conditions
+    if (window.syncState?.syncing) {
+      console.log("Sync in progress, queuing ingredient add");
+      return;
+    }
+
+    // Handle different data types defensively
+    let name;
+    if (typeof ingredientName === "string") {
+      name = ingredientName.trim();
+    } else if (
+      ingredientName &&
+      typeof ingredientName === "object" &&
+      ingredientName.name
+    ) {
+      // Handle ingredient object
+      name = ingredientName.name.trim();
+    } else {
+      console.error("Invalid ingredient format:", ingredientName);
+      return;
+    }
+
+    if (!name) {
       return;
     }
 
     // Check if ingredient already exists
     const exists = currentIngredients.some(
-      (ing) => ing.name.toLowerCase() === ingredientName.toLowerCase()
+      (ing) => ing.name.toLowerCase() === name.toLowerCase()
     );
 
     if (exists) {
@@ -270,43 +297,73 @@
     }
 
     // Check if ingredient is blacklisted
-    if (currentBlacklist.includes(ingredientName.toLowerCase())) {
+    if (currentBlacklist.includes(name.toLowerCase())) {
       // Automatically remove from blacklist when adding to ingredients
-      BlacklistStorage.remove(ingredientName);
+      BlacklistStorage.remove(name);
       loadBlacklist();
     }
 
-    const newIngredient = IngredientsStorage.add({
-      name: ingredientName,
+    // Create ingredient object for broadcasting
+    const ingredientData = {
+      name: name,
       addedBy: currentUser?.name || "Unknown",
-    });
-    console.log("New ingredient added:", newIngredient);
+    };
 
-    loadIngredients();
+    console.log("Adding ingredient:", ingredientData);
 
-    // Clear the form
+    // Clear the form immediately for better UX
     document.getElementById("new-ingredient").value = "";
 
-    // Mark existing recipes as potentially invalid
-    RecipeStorage.markInvalidRecipes(currentIngredients);
-
-    // TODO: Broadcast ingredient addition via WebSocket
+    // Broadcast ingredient addition via WebSocket
+    const wsManager = window.getWebSocketManager?.();
+    if (wsManager && wsManager.isConnected) {
+      // WebSocket will handle the actual addition via sync
+      // The server will create the ingredient and broadcast it back
+      wsManager.addIngredient(ingredientData);
+    } else {
+      // Fallback for offline mode - add locally
+      const newIngredient = IngredientsStorage.add(ingredientData);
+      if (newIngredient) {
+        loadIngredients();
+        RecipeStorage.markInvalidRecipes(currentIngredients);
+      }
+    }
   }
 
   // Remove ingredient
   window.removeIngredient = function (ingredientId) {
+    // Check if we're currently syncing to prevent race conditions
+    if (window.syncState?.syncing) {
+      console.log("Sync in progress, queuing ingredient remove");
+      return;
+    }
+
     const ingredient = currentIngredients.find(
       (ing) => ing.id === ingredientId
     );
-    if (!ingredient) return;
+    if (!ingredient) {
+      console.log("Ingredient not found for removal:", ingredientId);
+      return;
+    }
 
-    IngredientsStorage.remove(ingredientId);
-    loadIngredients();
+    console.log("Removing ingredient:", ingredient.name, "ID:", ingredientId);
+    console.log(
+      "Current ingredients in local storage:",
+      currentIngredients.map((ing) => ({ id: ing.id, name: ing.name }))
+    );
 
-    // Mark existing recipes as potentially invalid
-    RecipeStorage.markInvalidRecipes(IngredientsStorage.get());
-
-    // TODO: Broadcast ingredient removal via WebSocket
+    // Broadcast ingredient removal via WebSocket FIRST
+    const wsManager = window.getWebSocketManager?.();
+    if (wsManager && wsManager.isConnected) {
+      // WebSocket will handle the actual removal via sync
+      console.log("Sending removal request for ID:", ingredientId);
+      wsManager.removeIngredient(ingredientId);
+    } else {
+      // Fallback for offline mode - remove locally
+      IngredientsStorage.remove(ingredientId);
+      loadIngredients();
+      RecipeStorage.markInvalidRecipes(IngredientsStorage.get());
+    }
   };
 
   // Add ingredient to blacklist
@@ -325,7 +382,11 @@
     // Mark existing recipes as potentially invalid
     RecipeStorage.markInvalidRecipes(IngredientsStorage.get());
 
-    // TODO: Broadcast changes via WebSocket
+    // Broadcast ingredient blacklist via WebSocket
+    const wsManager = window.getWebSocketManager?.();
+    if (wsManager && wsManager.isConnected) {
+      wsManager.blacklistIngredient(ingredient.name, true);
+    }
   };
 
   // Add to blacklist
@@ -355,7 +416,11 @@
       RecipeStorage.markInvalidRecipes(IngredientsStorage.get());
     }
 
-    // TODO: Broadcast blacklist addition via WebSocket
+    // Broadcast blacklist addition via WebSocket
+    const wsManager = window.getWebSocketManager?.();
+    if (wsManager && wsManager.isConnected) {
+      wsManager.blacklistIngredient(ingredientName, false);
+    }
   }
 
   // Remove from blacklist
@@ -363,7 +428,11 @@
     BlacklistStorage.remove(ingredientName);
     loadBlacklist();
 
-    // TODO: Broadcast blacklist removal via WebSocket
+    // Broadcast blacklist removal via WebSocket (not implemented in server yet)
+    // const wsManager = window.getWebSocketManager?.();
+    // if (wsManager && wsManager.isConnected) {
+    //   wsManager.removeFromBlacklist(ingredientName);
+    // }
   };
 
   // Utility function to escape HTML
@@ -416,4 +485,10 @@
   window.getIngredients = () => currentIngredients;
   window.getBlacklist = () => currentBlacklist;
   window.refreshIngredients = loadIngredients;
+
+  // Global function for WebSocket sync manager
+  window.updateIngredientsDisplay = function () {
+    loadIngredients();
+    loadBlacklist();
+  };
 </script>

@@ -224,14 +224,51 @@ export const IngredientsStorage = {
   add(ingredient) {
     const ingredients = this.get();
 
+    console.log(
+      "IngredientsStorage.add called with:",
+      ingredient,
+      "Type:",
+      typeof ingredient
+    );
+    // Debug: Force browser cache refresh v2
+
     // Handle both string and object parameters
     let name, addedBy;
     if (typeof ingredient === "string") {
       name = ingredient.trim().toLowerCase();
       addedBy = "unknown";
+    } else if (ingredient && typeof ingredient === "object") {
+      if (ingredient.name && typeof ingredient.name === "string") {
+        name = ingredient.name.trim().toLowerCase();
+        addedBy = ingredient.addedBy || "unknown";
+      } else {
+        console.error(
+          "Invalid ingredient object - missing or invalid name property:",
+          ingredient
+        );
+        return null;
+      }
     } else {
-      name = ingredient.name ? ingredient.name.trim().toLowerCase() : "";
-      addedBy = ingredient.addedBy || "unknown";
+      console.error(
+        "Invalid ingredient parameter - must be string or object:",
+        ingredient
+      );
+      return null;
+    }
+
+    if (!name || name.length === 0) {
+      console.error("Empty ingredient name after processing:", ingredient);
+      return null;
+    }
+
+    // Check for duplicates by name
+    const exists = ingredients.some(
+      (ing) => ing.name.toLowerCase() === name.toLowerCase()
+    );
+
+    if (exists) {
+      console.log("Ingredient already exists locally, skipping:", name);
+      return null;
     }
 
     const newIngredient = {
@@ -242,6 +279,41 @@ export const IngredientsStorage = {
     };
     ingredients.push(newIngredient);
     this.set(ingredients);
+    return newIngredient;
+  },
+
+  // Add ingredient with server-provided ID (for WebSocket sync)
+  addWithId(ingredient) {
+    const ingredients = this.get();
+
+    // Validate ingredient data
+    if (!ingredient || !ingredient.id || !ingredient.name) {
+      console.error("Invalid ingredient data for addWithId:", ingredient);
+      return null;
+    }
+
+    // Check if ingredient already exists (by ID or name only)
+    const exists = ingredients.some(
+      (ing) =>
+        ing.id === ingredient.id ||
+        ing.name.toLowerCase() === ingredient.name.toLowerCase()
+    );
+
+    if (exists) {
+      console.log("Ingredient already exists, skipping:", ingredient.name);
+      return null;
+    }
+
+    const newIngredient = {
+      id: ingredient.id,
+      name: ingredient.name.toLowerCase(),
+      addedBy: ingredient.addedBy,
+      addedAt: ingredient.addedAt || Date.now(),
+    };
+
+    ingredients.push(newIngredient);
+    this.set(ingredients);
+    console.log("Added ingredient with server ID:", newIngredient);
     return newIngredient;
   },
 

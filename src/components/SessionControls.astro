@@ -203,7 +203,11 @@
 
         if (updated) {
           currentSession = updated;
-          // TODO: Broadcast setting change via WebSocket
+          // Broadcast setting change via WebSocket
+          const wsManager = window.getWebSocketManager?.();
+          if (wsManager && wsManager.isConnected) {
+            wsManager.updateHostPermissions(e.target.checked);
+          }
         }
       });
 
@@ -238,7 +242,9 @@
       if (updated) {
         currentSession = updated;
         loadParticipants();
-        // TODO: Broadcast participant removal via WebSocket
+        // Broadcast participant removal via WebSocket
+        // Note: participant removal would be handled by disconnecting their WebSocket
+        // For now, the participant will be notified via other WebSocket events
       }
     }
   };
@@ -267,7 +273,11 @@
         // Hide session controls since user is no longer host
         document.getElementById("session-controls").style.display = "none";
 
-        // TODO: Broadcast host transfer via WebSocket
+        // Broadcast host transfer via WebSocket
+        const wsManager = window.getWebSocketManager?.();
+        if (wsManager && wsManager.isConnected) {
+          wsManager.transferHost(newHostId);
+        }
 
         // Show notification to user
         setTimeout(() => {
@@ -287,7 +297,11 @@
       // Clear all session data
       clearAllData();
 
-      // TODO: Broadcast session end via WebSocket
+      // Broadcast session end via WebSocket
+      const wsManager = window.getWebSocketManager?.();
+      if (wsManager && wsManager.isConnected) {
+        wsManager.endSession(); // Properly end session for all participants
+      }
 
       // Redirect to home page
       window.location.href = "/";
@@ -318,4 +332,24 @@
       initSessionControls();
     }
   });
+
+  // Global function for WebSocket sync manager
+  window.refreshSessionControls = function (
+    isCurrentHost,
+    allowRecipeGeneration
+  ) {
+    isHost = isCurrentHost;
+    currentSession = window.getCurrentSession?.() || SessionStorage.get();
+
+    if (isHost) {
+      document.getElementById("session-controls").style.display = "block";
+      loadSessionSettings();
+      loadParticipants();
+    } else {
+      document.getElementById("session-controls").style.display = "none";
+    }
+  };
+
+  // Expose loadParticipants for external updates
+  window.loadParticipants = loadParticipants;
 </script>
