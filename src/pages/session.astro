@@ -376,7 +376,13 @@ import SessionControls from "../components/SessionControls.astro";
       getBlacklist: () => BlacklistStorage.get(),
       clearBlacklist: () => BlacklistStorage.clear(),
       // Add recipe storage methods
-      addRecipe: (recipe) => RecipeStorage.add(recipe),
+      addRecipe: (recipe, preserveId = false) => {
+        if (preserveId && recipe.id) {
+          return RecipeStorage.addWithId(recipe);
+        } else {
+          return RecipeStorage.add(recipe);
+        }
+      },
       removeRecipe: (recipeId) => RecipeStorage.remove(recipeId),
       getRecipes: () => RecipeStorage.get(),
       clearRecipes: () => RecipeStorage.clear(),

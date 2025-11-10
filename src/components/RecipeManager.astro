@@ -283,6 +283,12 @@
   async function generateNewRecipe() {
     if (isGenerating) return;
 
+    // Check if we're currently syncing to prevent race conditions
+    if (window.syncState?.syncing) {
+      console.log("Sync in progress, queuing recipe generation");
+      return;
+    }
+
     const ingredients = IngredientsStorage.get();
     if (ingredients.length === 0) {
       window.showError?.("Please add some ingredients first");
@@ -319,22 +325,21 @@
 
       statusText.textContent = "Saving recipe...";
 
-      // Add recipe to storage
-      const savedRecipe = RecipeStorage.add(recipe);
-
-      // Reload recipes
-      loadRecipes();
+      // Broadcast new recipe via WebSocket FIRST
+      const wsManager = window.getWebSocketManager?.();
+      if (wsManager && wsManager.isConnected) {
+        // WebSocket will handle the actual addition via sync
+        wsManager.addRecipe(recipe);
+      } else {
+        // Fallback for offline mode - add locally
+        const savedRecipe = RecipeStorage.add(recipe);
+        loadRecipes();
+      }
 
       statusText.textContent = "Recipe generated successfully!";
       setTimeout(() => {
         statusDiv.classList.add("hidden");
       }, 2000);
-
-      // Broadcast new recipe via WebSocket
-      const wsManager = window.getWebSocketManager?.();
-      if (wsManager && wsManager.isConnected && recipe) {
-        wsManager.addRecipe(recipe);
-      }
     } catch (error) {
       console.error("Recipe generation error:", error);
       window.showError?.(`Failed to generate recipe: ${error.message}`);

@@ -648,8 +648,36 @@ class SessionSyncManager {
    */
   handleRecipeAdded(message) {
     const { recipe } = message;
-    this.storage.addRecipe(recipe);
-    this.refreshRecipesDisplay();
+    console.log(
+      "DEBUGGING: handleRecipeAdded called with recipe:",
+      recipe.title,
+      "ID:",
+      recipe.id
+    );
+
+    // Set syncing flag to prevent race conditions
+    if (window.syncState) {
+      window.syncState.syncing = true;
+    }
+
+    try {
+      // Add recipe with server ID preserved
+      const result = this.storage.addRecipe(recipe, true);
+      if (result) {
+        console.log("Successfully added recipe from WebSocket:", result.title);
+        this.refreshRecipesDisplay();
+      } else {
+        console.log(
+          "Recipe was duplicate or invalid, not added:",
+          recipe.title
+        );
+      }
+    } finally {
+      // Clear syncing flag
+      if (window.syncState) {
+        window.syncState.syncing = false;
+      }
+    }
   }
 
   /**

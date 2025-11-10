@@ -406,6 +406,41 @@ export const RecipeStorage = {
     return newRecipe;
   },
 
+  // Add recipe with server-provided ID (for WebSocket sync)
+  addWithId(recipe) {
+    const recipes = this.get();
+
+    // Validate recipe data
+    if (!recipe || !recipe.id) {
+      console.error("Invalid recipe data for addWithId:", recipe);
+      return null;
+    }
+
+    // Check if recipe already exists (by ID)
+    const exists = recipes.some((r) => r.id === recipe.id);
+
+    if (exists) {
+      console.log("Recipe already exists, skipping:", recipe.title);
+      return null;
+    }
+
+    const newRecipe = {
+      ...recipe,
+      createdAt: recipe.createdAt || Date.now(),
+      isValid: recipe.isValid !== undefined ? recipe.isValid : true,
+    };
+
+    recipes.push(newRecipe);
+    this.set(recipes);
+    console.log(
+      "Added recipe with server ID:",
+      newRecipe.title,
+      "ID:",
+      newRecipe.id
+    );
+    return newRecipe;
+  },
+
   update(recipeId, updates) {
     const recipes = this.get();
     const index = recipes.findIndex((r) => r.id === recipeId);
