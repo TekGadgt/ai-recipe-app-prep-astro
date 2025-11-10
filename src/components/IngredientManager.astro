@@ -271,16 +271,9 @@
 
     // Check if ingredient is blacklisted
     if (currentBlacklist.includes(ingredientName.toLowerCase())) {
-      if (
-        confirm(
-          `"${ingredientName}" is blacklisted. Remove from blacklist and add to ingredients?`
-        )
-      ) {
-        BlacklistStorage.remove(ingredientName);
-        loadBlacklist();
-      } else {
-        return;
-      }
+      // Automatically remove from blacklist when adding to ingredients
+      BlacklistStorage.remove(ingredientName);
+      loadBlacklist();
     }
 
     const newIngredient = IngredientsStorage.add({
@@ -307,15 +300,13 @@
     );
     if (!ingredient) return;
 
-    if (confirm(`Remove "${ingredient.name}" from ingredients?`)) {
-      IngredientsStorage.remove(ingredientId);
-      loadIngredients();
+    IngredientsStorage.remove(ingredientId);
+    loadIngredients();
 
-      // Mark existing recipes as potentially invalid
-      RecipeStorage.markInvalidRecipes(IngredientsStorage.get());
+    // Mark existing recipes as potentially invalid
+    RecipeStorage.markInvalidRecipes(IngredientsStorage.get());
 
-      // TODO: Broadcast ingredient removal via WebSocket
-    }
+    // TODO: Broadcast ingredient removal via WebSocket
   };
 
   // Add ingredient to blacklist
@@ -325,22 +316,16 @@
     );
     if (!ingredient) return;
 
-    if (
-      confirm(
-        `Add "${ingredient.name}" to blacklist and remove from ingredients?`
-      )
-    ) {
-      BlacklistStorage.add(ingredient.name);
-      IngredientsStorage.remove(ingredientId);
+    BlacklistStorage.add(ingredient.name);
+    IngredientsStorage.remove(ingredientId);
 
-      loadIngredients();
-      loadBlacklist();
+    loadIngredients();
+    loadBlacklist();
 
-      // Mark existing recipes as potentially invalid
-      RecipeStorage.markInvalidRecipes(IngredientsStorage.get());
+    // Mark existing recipes as potentially invalid
+    RecipeStorage.markInvalidRecipes(IngredientsStorage.get());
 
-      // TODO: Broadcast changes via WebSocket
-    }
+    // TODO: Broadcast changes via WebSocket
   };
 
   // Add to blacklist
@@ -375,12 +360,10 @@
 
   // Remove from blacklist
   window.removeFromBlacklist = function (ingredientName) {
-    if (confirm(`Remove "${ingredientName}" from blacklist?`)) {
-      BlacklistStorage.remove(ingredientName);
-      loadBlacklist();
+    BlacklistStorage.remove(ingredientName);
+    loadBlacklist();
 
-      // TODO: Broadcast blacklist removal via WebSocket
-    }
+    // TODO: Broadcast blacklist removal via WebSocket
   };
 
   // Utility function to escape HTML
