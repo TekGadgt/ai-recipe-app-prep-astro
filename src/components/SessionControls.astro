@@ -1,0 +1,321 @@
+---
+// SessionControls component for host session management
+---
+
+<div id="session-controls" class="card mt-4" style="display: none;">
+  <div class="card-header">
+    <h2 class="card-title">Session Controls</h2>
+    <p class="card-description">
+      Manage your session settings and participants (Host only)
+    </p>
+  </div>
+  <div class="card-content">
+    <div class="grid grid-2">
+      <!-- Session Settings -->
+      <div>
+        <h3 class="font-bold mb-4">Settings</h3>
+
+        <div class="form-group">
+          <label style="display: flex; align-items: center; gap: 0.5rem;">
+            <input type="checkbox" id="allow-recipe-generation" />
+            <span>Allow others to generate recipes</span>
+          </label>
+          <div class="form-error" style="color: #6b7280; margin-top: 0.25rem;">
+            When disabled, only you can generate new recipes
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Transfer Host Privileges</label>
+          <div style="display: flex; gap: 0.5rem;">
+            <select
+              id="transfer-host-select"
+              class="form-select"
+              style="flex: 1;"
+            >
+              <option value="">Select participant...</option>
+            </select>
+            <button
+              id="transfer-host-btn"
+              class="btn btn-secondary btn-sm"
+              disabled
+            >
+              Transfer
+            </button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <button id="end-session-btn" class="btn btn-danger">
+            End Session
+          </button>
+          <div class="form-error" style="color: #6b7280; margin-top: 0.25rem;">
+            This will end the session for all participants
+          </div>
+        </div>
+      </div>
+
+      <!-- Participants -->
+      <div>
+        <h3 class="font-bold mb-4">
+          Participants <span id="participants-count">(0)</span>
+        </h3>
+
+        <div id="participants-list" class="item-list">
+          <div
+            id="participants-empty"
+            class="text-center"
+            style="padding: 1rem; color: #6b7280; font-size: 0.875rem;"
+          >
+            No other participants yet
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import {
+    SessionStorage,
+    UserStorage,
+    clearAllData,
+  } from "/scripts/storage.js";
+
+  let currentSession = null;
+  let currentUser = null;
+  let isHost = false;
+
+  // Initialize component
+  function initSessionControls() {
+    currentSession = SessionStorage.get();
+    currentUser = UserStorage.get();
+
+    if (!currentSession || !currentUser) return;
+
+    // Check if current user is the host
+    isHost = currentUser.id === currentSession.hostId;
+
+    if (isHost) {
+      document.getElementById("session-controls").style.display = "block";
+      loadSessionSettings();
+      loadParticipants();
+      setupEventListeners();
+    }
+  }
+
+  // Load session settings
+  function loadSessionSettings() {
+    const allowRecipeGeneration = document.getElementById(
+      "allow-recipe-generation"
+    );
+    allowRecipeGeneration.checked =
+      currentSession.allowRecipeGeneration !== false;
+  }
+
+  // Load participants list
+  function loadParticipants() {
+    const participantsList = document.getElementById("participants-list");
+    const participantsEmpty = document.getElementById("participants-empty");
+    const participantsCount = document.getElementById("participants-count");
+    const transferSelect = document.getElementById("transfer-host-select");
+
+    // Filter out the host from participants
+    const otherParticipants = currentSession.participants.filter(
+      (p) => p.id !== currentSession.hostId
+    );
+
+    participantsCount.textContent = `(${currentSession.participants.length})`;
+
+    if (otherParticipants.length === 0) {
+      participantsList.innerHTML = "";
+      participantsList.appendChild(participantsEmpty);
+      transferSelect.innerHTML =
+        '<option value="">No other participants</option>';
+      return;
+    }
+
+    participantsEmpty.style.display = "none";
+
+    // Update participants list
+    participantsList.innerHTML = currentSession.participants
+      .map((participant) => {
+        const isCurrentHost = participant.id === currentSession.hostId;
+        const hostBadge = isCurrentHost
+          ? '<span style="background: #dbeafe; color: #1d4ed8; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem;">Host</span>'
+          : "";
+
+        return `
+        <div class="item-list-item">
+          <div class="item-content">
+            <div class="item-title">
+              ${escapeHtml(participant.name)} ${hostBadge}
+            </div>
+            <div class="item-meta">
+              Joined ${new Date(participant.joinedAt).toLocaleString()}
+            </div>
+          </div>
+          ${
+            !isCurrentHost
+              ? `
+            <div class="item-actions">
+              <button 
+                class="btn btn-danger btn-sm" 
+                onclick="removeParticipant('${participant.id}')"
+                title="Remove participant"
+              >
+                Remove
+              </button>
+            </div>
+          `
+              : ""
+          }
+        </div>
+      `;
+      })
+      .join("");
+
+    // Update transfer host select
+    transferSelect.innerHTML = `
+      <option value="">Select participant...</option>
+      ${otherParticipants
+        .map(
+          (p) => `
+        <option value="${p.id}">${escapeHtml(p.name)}</option>
+      `
+        )
+        .join("")}
+    `;
+
+    document.getElementById("transfer-host-btn").disabled =
+      transferSelect.value === "";
+  }
+
+  // Setup event listeners
+  function setupEventListeners() {
+    // Allow recipe generation toggle
+    document
+      .getElementById("allow-recipe-generation")
+      .addEventListener("change", (e) => {
+        const updated = SessionStorage.update({
+          allowRecipeGeneration: e.target.checked,
+        });
+
+        if (updated) {
+          currentSession = updated;
+          // TODO: Broadcast setting change via WebSocket
+        }
+      });
+
+    // Transfer host select
+    document
+      .getElementById("transfer-host-select")
+      .addEventListener("change", (e) => {
+        document.getElementById("transfer-host-btn").disabled =
+          e.target.value === "";
+      });
+
+    // Transfer host button
+    document
+      .getElementById("transfer-host-btn")
+      .addEventListener("click", transferHost);
+
+    // End session button
+    document
+      .getElementById("end-session-btn")
+      .addEventListener("click", endSession);
+  }
+
+  // Remove participant
+  window.removeParticipant = function (participantId) {
+    const participant = currentSession.participants.find(
+      (p) => p.id === participantId
+    );
+    if (!participant) return;
+
+    if (confirm(`Remove ${participant.name} from the session?`)) {
+      const updated = SessionStorage.removeParticipant(participantId);
+      if (updated) {
+        currentSession = updated;
+        loadParticipants();
+        // TODO: Broadcast participant removal via WebSocket
+      }
+    }
+  };
+
+  // Transfer host privileges
+  function transferHost() {
+    const newHostId = document.getElementById("transfer-host-select").value;
+    if (!newHostId) return;
+
+    const newHost = currentSession.participants.find((p) => p.id === newHostId);
+    if (!newHost) return;
+
+    if (
+      confirm(
+        `Transfer host privileges to ${newHost.name}? You will no longer be able to manage the session.`
+      )
+    ) {
+      const updated = SessionStorage.update({
+        hostId: newHostId,
+        hostName: newHost.name,
+      });
+
+      if (updated) {
+        currentSession = updated;
+
+        // Hide session controls since user is no longer host
+        document.getElementById("session-controls").style.display = "none";
+
+        // TODO: Broadcast host transfer via WebSocket
+
+        // Show notification to user
+        setTimeout(() => {
+          alert(`${newHost.name} is now the session host.`);
+        }, 100);
+      }
+    }
+  }
+
+  // End session
+  function endSession() {
+    if (
+      confirm(
+        "Are you sure you want to end this session? All participants will be disconnected and data will be cleared."
+      )
+    ) {
+      // Clear all session data
+      clearAllData();
+
+      // TODO: Broadcast session end via WebSocket
+
+      // Redirect to home page
+      window.location.href = "/";
+    }
+  }
+
+  // Utility function to escape HTML
+  function escapeHtml(text) {
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // Listen for session updates from other components
+  window.addEventListener("sessionUpdated", (event) => {
+    currentSession = event.detail;
+    if (isHost) {
+      loadParticipants();
+    }
+  });
+
+  // Initialize when DOM is ready
+  document.addEventListener("DOMContentLoaded", initSessionControls);
+
+  // Re-initialize when session data changes
+  window.addEventListener("storage", (e) => {
+    if (e.key && e.key.includes("pantry_party_session")) {
+      initSessionControls();
+    }
+  });
+</script>

@@ -1,0 +1,408 @@
+---
+import Layout from "../layouts/Layout.astro";
+import IngredientManager from "../components/IngredientManager.astro";
+import RecipeManager from "../components/RecipeManager.astro";
+import SessionControls from "../components/SessionControls.astro";
+---
+
+<Layout title="Pantry Party - Session">
+  <!-- Session Header -->
+  <div class="card mb-4">
+    <div class="card-content">
+      <div
+        style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;"
+      >
+        <div>
+          <h1
+            style="font-size: 1.5rem; font-weight: bold; margin-bottom: 0.5rem;"
+          >
+            Cooking Session
+          </h1>
+          <div
+            id="session-details"
+            style="color: #6b7280; font-size: 0.875rem;"
+          >
+            Loading session...
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 1rem;">
+          <div
+            id="participant-count"
+            style="font-size: 0.875rem; color: #6b7280;"
+          >
+            <!-- Participant count will be shown here -->
+          </div>
+          <button id="share-session" class="btn btn-primary btn-sm">
+            Share Session
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Session Content -->
+  <div class="grid">
+    <!-- Left Column: Ingredients & Context -->
+    <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+      <!-- Context Input -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Cooking Context</h2>
+          <p class="card-description">
+            Add context to help generate better recipes (optional)
+          </p>
+        </div>
+        <div class="card-content">
+          <form id="context-form">
+            <div class="form-group">
+              <textarea
+                id="cooking-context"
+                class="form-textarea"
+                placeholder="e.g., We're grilling outdoors, Making dessert, Quick lunch ideas, Vegetarian only..."
+                rows="3"
+                maxlength="500"></textarea>
+              <div
+                style="display: flex; justify-content: between; align-items: center; margin-top: 0.5rem;"
+              >
+                <div style="font-size: 0.75rem; color: #6b7280;">
+                  <span id="context-char-count">0</span>/500 characters
+                </div>
+                <button type="submit" class="btn btn-secondary btn-sm">
+                  Update Context
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Ingredient Manager -->
+      <IngredientManager />
+    </div>
+
+    <!-- Right Column: Recipes -->
+    <div>
+      <RecipeManager />
+    </div>
+  </div>
+
+  <!-- Session Controls (Host Only) -->
+  <SessionControls />
+
+  <!-- Share Modal -->
+  <div id="share-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Share Session</h3>
+        <button class="modal-close" onclick="closeShareModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Session Code</label>
+          <div style="display: flex; gap: 0.5rem;">
+            <input
+              type="text"
+              id="session-code-display"
+              class="form-input"
+              readonly
+              style="font-family: monospace; font-size: 1.25rem; text-align: center; letter-spacing: 0.1em;"
+            />
+            <button class="btn btn-secondary" onclick="copySessionCode()">
+              Copy
+            </button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Share Link</label>
+          <div style="display: flex; gap: 0.5rem;">
+            <input
+              type="text"
+              id="session-link-display"
+              class="form-input"
+              readonly
+            />
+            <button class="btn btn-secondary" onclick="copySessionLink()">
+              Copy
+            </button>
+          </div>
+        </div>
+        <div
+          style="background: #f0f9ff; border: 1px solid #0ea5e9; border-radius: 6px; padding: 1rem; margin-top: 1rem;"
+        >
+          <h4 style="font-weight: 500; margin-bottom: 0.5rem;">How to Join:</h4>
+          <ol style="margin-left: 1.5rem; color: #0f172a;">
+            <li>Share the session code or link with friends</li>
+            <li>They can enter the code on the homepage</li>
+            <li>Or click the shared link directly</li>
+            <li>They'll need their own OpenAI API key to generate recipes</li>
+          </ol>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeShareModal()"
+          >Close</button
+        >
+      </div>
+    </div>
+  </div>
+
+  <!-- Error Modal -->
+  <div id="error-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Error</h3>
+        <button class="modal-close" onclick="closeErrorModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p id="error-message"></p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeErrorModal()"
+          >Close</button
+        >
+      </div>
+    </div>
+  </div>
+</Layout>
+
+<style>
+  .modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+
+  .modal-content {
+    background: white;
+    border-radius: 12px;
+    max-width: 500px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+  }
+
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem 1.5rem 0;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .modal-header h3 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #1f2937;
+  }
+
+  .modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #6b7280;
+    padding: 0;
+    width: 2rem;
+    height: 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .modal-body {
+    padding: 1.5rem;
+  }
+
+  .modal-footer {
+    padding: 0 1.5rem 1.5rem;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+  }
+
+  @media (max-width: 1024px) {
+    .grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<script type="module">
+  import {
+    UserStorage,
+    SessionStorage,
+    ContextStorage,
+  } from "/scripts/storage.js";
+
+  let currentSession = null;
+  let currentUser = null;
+
+  // Show error modal
+  window.showError = function (message) {
+    document.getElementById("error-message").textContent = message;
+    document.getElementById("error-modal").style.display = "flex";
+  };
+
+  // Close error modal
+  window.closeErrorModal = function () {
+    document.getElementById("error-modal").style.display = "none";
+  };
+
+  // Share session modal functions
+  window.closeShareModal = function () {
+    document.getElementById("share-modal").style.display = "none";
+  };
+
+  window.copySessionCode = function () {
+    const codeInput = document.getElementById("session-code-display");
+    codeInput.select();
+    document.execCommand("copy");
+
+    // Show feedback
+    const button = event.target;
+    const originalText = button.textContent;
+    button.textContent = "Copied!";
+    setTimeout(() => {
+      button.textContent = originalText;
+    }, 2000);
+  };
+
+  window.copySessionLink = function () {
+    const linkInput = document.getElementById("session-link-display");
+    linkInput.select();
+    document.execCommand("copy");
+
+    // Show feedback
+    const button = event.target;
+    const originalText = button.textContent;
+    button.textContent = "Copied!";
+    setTimeout(() => {
+      button.textContent = originalText;
+    }, 2000);
+  };
+
+  // Initialize session from URL parameters
+  function initializeSession() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const sessionCode = urlParams.get("code");
+    const isHost = urlParams.get("host") === "true";
+    const isParticipant = urlParams.has("participant");
+    const isContinuing = urlParams.get("continue") === "true";
+
+    if (!sessionCode) {
+      showError("No session code provided");
+      setTimeout(() => (window.location.href = "/"), 2000);
+      return;
+    }
+
+    currentUser = UserStorage.get();
+    if (!currentUser) {
+      showError("User not found. Please start from the homepage.");
+      setTimeout(() => (window.location.href = "/"), 2000);
+      return;
+    }
+
+    if (isHost || isContinuing) {
+      // Load existing session
+      currentSession = SessionStorage.get();
+      if (!currentSession || currentSession.id !== sessionCode) {
+        showError("Session not found or expired");
+        setTimeout(() => (window.location.href = "/"), 2000);
+        return;
+      }
+    } else {
+      // TODO: Implement WebSocket session joining logic
+      // For now, create a mock session for the participant
+      showError("Session joining will be implemented with WebSocket support");
+      return;
+    }
+
+    updateSessionDisplay();
+    loadContext();
+  }
+
+  // Update session display
+  function updateSessionDisplay() {
+    if (!currentSession) return;
+
+    const sessionDetails = document.getElementById("session-details");
+    const participantCount = document.getElementById("participant-count");
+
+    sessionDetails.innerHTML = `
+      <strong>Code:</strong> ${currentSession.id} • 
+      <strong>Host:</strong> ${currentSession.hostName} • 
+      <strong>Created:</strong> ${new Date(currentSession.createdAt).toLocaleTimeString()}
+    `;
+
+    participantCount.textContent = `${currentSession.participants.length} participant(s)`;
+
+    // Set up share modal
+    document.getElementById("session-code-display").value = currentSession.id;
+    document.getElementById("session-link-display").value =
+      `${window.location.origin}/session?code=${currentSession.id}`;
+  }
+
+  // Load and display context
+  function loadContext() {
+    const context = ContextStorage.get();
+    const contextTextarea = document.getElementById("cooking-context");
+    const charCount = document.getElementById("context-char-count");
+
+    contextTextarea.value = context;
+    charCount.textContent = context.length;
+  }
+
+  // Context form handler
+  document.getElementById("context-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const context = document.getElementById("cooking-context").value.trim();
+    ContextStorage.set(context);
+
+    // Show feedback
+    const button = e.target.querySelector("button");
+    const originalText = button.textContent;
+    button.textContent = "Saved!";
+    button.classList.remove("btn-secondary");
+    button.classList.add("btn-success");
+
+    setTimeout(() => {
+      button.textContent = originalText;
+      button.classList.remove("btn-success");
+      button.classList.add("btn-secondary");
+    }, 2000);
+
+    // TODO: Broadcast context change via WebSocket
+  });
+
+  // Context character count
+  document.getElementById("cooking-context").addEventListener("input", (e) => {
+    const charCount = document.getElementById("context-char-count");
+    charCount.textContent = e.target.value.length;
+  });
+
+  // Share session button
+  document.getElementById("share-session").addEventListener("click", () => {
+    document.getElementById("share-modal").style.display = "flex";
+  });
+
+  // Initialize on page load
+  document.addEventListener("DOMContentLoaded", initializeSession);
+
+  // Handle page visibility change to update session activity
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && currentSession) {
+      SessionStorage.update({ lastActivity: Date.now() });
+    }
+  });
+
+  // Expose functions for components
+  window.getCurrentSession = () => currentSession;
+  window.getCurrentUser = () => currentUser;
+</script>

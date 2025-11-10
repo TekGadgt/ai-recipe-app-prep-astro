@@ -1,0 +1,85 @@
+---
+export interface Props {
+  title: string;
+  description?: string;
+}
+
+const { title, description = "Collaborative recipe generation web app" } =
+  Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="description" content={description} />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#2563eb" />
+    <link rel="stylesheet" href="/styles/global.css" />
+    <title>{title}</title>
+
+    <!-- PWA Meta Tags -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Pantry Party" />
+
+    <!-- Service Worker Registration -->
+    <script>
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker
+            .register("/sw.js")
+            .then((registration) => {
+              console.log("SW registered: ", registration);
+            })
+            .catch((registrationError) => {
+              console.log("SW registration failed: ", registrationError);
+            });
+        });
+      }
+    </script>
+  </head>
+  <body>
+    <div class="main-content">
+      <header class="header">
+        <div class="container">
+          <div class="header-content">
+            <a href="/" class="logo">Pantry Party</a>
+            <div class="session-info" id="session-status">
+              <span class="status-indicator status-disconnected"></span>
+              <span>Not connected</span>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="container" style="padding-top: 2rem; padding-bottom: 2rem;">
+        <slot />
+      </main>
+    </div>
+
+    <!-- Global scripts -->
+    <script src="/scripts/storage.js" type="module"></script>
+    <script>
+      // Initialize session status display
+      function updateSessionStatus() {
+        const statusElement = document.getElementById("session-status");
+        if (!statusElement) return;
+
+        // This will be enhanced with WebSocket connection status
+        const indicator = statusElement.querySelector(".status-indicator");
+        const text = statusElement.querySelector("span:last-child");
+
+        // For now, show disconnected status
+        indicator.className = "status-indicator status-disconnected";
+        text.textContent = "Not connected";
+      }
+
+      // Update status on page load
+      document.addEventListener("DOMContentLoaded", updateSessionStatus);
+    </script>
+  </body>
+</html>

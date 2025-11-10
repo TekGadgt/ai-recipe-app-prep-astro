@@ -1,0 +1,552 @@
+---
+// RecipeManager component for recipe generation, display, and voting
+---
+
+<div class="card">
+  <div class="card-header">
+    <h2 class="card-title">
+      Generated Recipes <span id="recipes-count">(0)</span>
+    </h2>
+    <div
+      style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;"
+    >
+      <!-- Recipe Generation -->
+      <button id="generate-recipe-btn" class="btn btn-success">
+        ✨ Generate Recipe
+      </button>
+
+      <!-- Sorting Options -->
+      <select id="recipe-sort" class="form-select" style="width: auto;">
+        <option value="newest">Newest First</option>
+        <option value="votes">Highest Voted</option>
+        <option value="difficulty">Difficulty</option>
+        <option value="time">Prep Time</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="card-content">
+    <!-- Recipe Generation Status -->
+    <div
+      id="generation-status"
+      class="hidden"
+      style="background: #f0f9ff; border: 1px solid #0ea5e9; border-radius: 6px; padding: 1rem; margin-bottom: 1rem;"
+    >
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <div class="spinner"></div>
+        <span id="generation-text">Generating recipe...</span>
+      </div>
+    </div>
+
+    <!-- API Key Warning -->
+    <div
+      id="api-key-warning"
+      class="hidden"
+      style="background: #fef3c7; border: 1px solid #f59e0b; border-radius: 6px; padding: 1rem; margin-bottom: 1rem;"
+    >
+      <h4 style="font-weight: 500; margin-bottom: 0.5rem;">
+        ⚠️ OpenAI API Key Required
+      </h4>
+      <p style="color: #92400e; margin-bottom: 1rem;">
+        You need to provide your OpenAI API key to generate recipes. Your key is
+        stored locally and never sent to our servers.
+      </p>
+      <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <input
+          type="password"
+          id="inline-api-key"
+          class="form-input"
+          placeholder="sk-..."
+          style="flex: 1; min-width: 200px;"
+        />
+        <button id="save-api-key-btn" class="btn btn-primary btn-sm">
+          Save Key
+        </button>
+        <a
+          href="https://platform.openai.com/api-keys"
+          target="_blank"
+          class="btn btn-ghost btn-sm"
+        >
+          Get API Key
+        </a>
+      </div>
+    </div>
+
+    <!-- Recipe Filters -->
+    <div
+      id="recipe-filters"
+      class="hidden"
+      style="display: flex; gap: 1rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap;"
+    >
+      <label style="display: flex; align-items: center; gap: 0.5rem;">
+        <input type="checkbox" id="filter-valid" checked />
+        <span class="text-sm">Valid only</span>
+      </label>
+      <label style="display: flex; align-items: center; gap: 0.5rem;">
+        <input type="checkbox" id="filter-warnings" />
+        <span class="text-sm">With warnings</span>
+      </label>
+      <select id="filter-category" class="form-select" style="width: auto;">
+        <option value="">All Categories</option>
+        <option value="Main Dish">Main Dish</option>
+        <option value="Appetizer">Appetizer</option>
+        <option value="Dessert">Dessert</option>
+        <option value="Beverage">Beverage</option>
+        <option value="Snack">Snack</option>
+      </select>
+    </div>
+
+    <!-- Recipe List -->
+    <div id="recipes-list">
+      <div
+        id="recipes-empty"
+        class="text-center"
+        style="padding: 3rem; color: #6b7280;"
+      >
+        <p style="font-size: 1.125rem; margin-bottom: 0.5rem;">
+          🍳 No recipes yet
+        </p>
+        <p>Generate your first recipe using the ingredients you've added!</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import {
+    RecipeStorage,
+    VoteStorage,
+    UserStorage,
+    IngredientsStorage,
+    ContextStorage,
+    BlacklistStorage,
+    OpenAIStorage,
+  } from "/scripts/storage.js";
+  import {
+    generateRecipe,
+    isValidApiKey,
+    testApiKey,
+  } from "/scripts/openai.js";
+
+  let currentRecipes = [];
+  let currentUser = null;
+  let isGenerating = false;
+
+  // Initialize component
+  function initRecipeManager() {
+    currentUser = UserStorage.get();
+    loadRecipes();
+    checkApiKey();
+    setupEventListeners();
+  }
+
+  // Check if API key is available
+  function checkApiKey() {
+    const apiKey = OpenAIStorage.get();
+    const warning = document.getElementById("api-key-warning");
+    const generateBtn = document.getElementById("generate-recipe-btn");
+
+    if (!isValidApiKey(apiKey)) {
+      warning.classList.remove("hidden");
+      generateBtn.disabled = true;
+    } else {
+      warning.classList.add("hidden");
+      generateBtn.disabled = false;
+    }
+  }
+
+  // Setup event listeners
+  function setupEventListeners() {
+    // Generate recipe button
+    document
+      .getElementById("generate-recipe-btn")
+      .addEventListener("click", generateNewRecipe);
+
+    // Save API key
+    document
+      .getElementById("save-api-key-btn")
+      .addEventListener("click", saveInlineApiKey);
+
+    // Sorting
+    document
+      .getElementById("recipe-sort")
+      .addEventListener("change", sortRecipes);
+
+    // Filters
+    document
+      .getElementById("filter-valid")
+      .addEventListener("change", filterRecipes);
+    document
+      .getElementById("filter-warnings")
+      .addEventListener("change", filterRecipes);
+    document
+      .getElementById("filter-category")
+      .addEventListener("change", filterRecipes);
+  }
+
+  // Save API key from inline input
+  async function saveInlineApiKey() {
+    const apiKey = document.getElementById("inline-api-key").value.trim();
+    const button = document.getElementById("save-api-key-btn");
+
+    if (!isValidApiKey(apiKey)) {
+      window.showError?.("Please enter a valid OpenAI API key");
+      return;
+    }
+
+    // Show loading state
+    const originalText = button.textContent;
+    button.innerHTML = '<span class="spinner"></span>';
+    button.disabled = true;
+
+    try {
+      // Test the API key
+      const testResult = await testApiKey(apiKey);
+      if (!testResult.success) {
+        window.showError?.(`API Key Error: ${testResult.message}`);
+        return;
+      }
+
+      // Save the key
+      OpenAIStorage.set(apiKey);
+      checkApiKey();
+
+      // Clear the input
+      document.getElementById("inline-api-key").value = "";
+
+      // Show success feedback
+      button.textContent = "Saved!";
+      button.classList.remove("btn-primary");
+      button.classList.add("btn-success");
+
+      setTimeout(() => {
+        button.textContent = originalText;
+        button.classList.remove("btn-success");
+        button.classList.add("btn-primary");
+      }, 2000);
+    } catch (error) {
+      window.showError?.(`Error: ${error.message}`);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  // Load recipes from storage
+  function loadRecipes() {
+    currentRecipes = RecipeStorage.get();
+    // Reapply current sort order
+    applySorting();
+    updateRecipesDisplay();
+  }
+
+  // Apply current sorting without changing display (helper function)
+  function applySorting() {
+    const sortSelect = document.getElementById("recipe-sort");
+    if (!sortSelect) return;
+
+    const sortBy = sortSelect.value;
+    currentRecipes.sort((a, b) => {
+      switch (sortBy) {
+        case "newest":
+          return b.createdAt - a.createdAt;
+        case "votes":
+          return (b.votes || 0) - (a.votes || 0);
+        case "difficulty":
+          const difficultyOrder = { Easy: 1, Medium: 2, Hard: 3 };
+          return (
+            (difficultyOrder[a.difficulty] || 2) -
+            (difficultyOrder[b.difficulty] || 2)
+          );
+        case "time":
+          const getMinutes = (timeStr) => {
+            const match = timeStr?.match(/(\d+)/);
+            return match ? parseInt(match[1]) : 30;
+          };
+          return getMinutes(a.prepTime) - getMinutes(b.prepTime);
+        default:
+          return b.createdAt - a.createdAt;
+      }
+    });
+  }
+
+  // Generate new recipe
+  async function generateNewRecipe() {
+    if (isGenerating) return;
+
+    const ingredients = IngredientsStorage.get();
+    if (ingredients.length === 0) {
+      window.showError?.("Please add some ingredients first");
+      return;
+    }
+
+    const apiKey = OpenAIStorage.get();
+    if (!isValidApiKey(apiKey)) {
+      window.showError?.("Please provide a valid OpenAI API key");
+      return;
+    }
+
+    isGenerating = true;
+    const generateBtn = document.getElementById("generate-recipe-btn");
+    const originalText = generateBtn.textContent;
+
+    // Show generation status
+    const statusDiv = document.getElementById("generation-status");
+    const statusText = document.getElementById("generation-text");
+    statusDiv.classList.remove("hidden");
+    statusText.textContent = "Analyzing ingredients...";
+
+    generateBtn.innerHTML = '<span class="spinner"></span> Generating...';
+    generateBtn.disabled = true;
+
+    try {
+      statusText.textContent = "Generating recipe with AI...";
+
+      const recipe = await generateRecipe({
+        ingredients: ingredients,
+        context: ContextStorage.get(),
+        blacklist: BlacklistStorage.get(),
+      });
+
+      statusText.textContent = "Saving recipe...";
+
+      // Add recipe to storage
+      const savedRecipe = RecipeStorage.add(recipe);
+
+      // Reload recipes
+      loadRecipes();
+
+      statusText.textContent = "Recipe generated successfully!";
+      setTimeout(() => {
+        statusDiv.classList.add("hidden");
+      }, 2000);
+
+      // TODO: Broadcast new recipe via WebSocket
+    } catch (error) {
+      console.error("Recipe generation error:", error);
+      window.showError?.(`Failed to generate recipe: ${error.message}`);
+      statusDiv.classList.add("hidden");
+    } finally {
+      isGenerating = false;
+      generateBtn.textContent = originalText;
+      generateBtn.disabled = false;
+    }
+  }
+
+  // Sort recipes
+  function sortRecipes() {
+    applySorting();
+    updateRecipesDisplay();
+  }
+
+  // Filter recipes
+  function filterRecipes() {
+    updateRecipesDisplay();
+  }
+
+  // Update recipes display
+  function updateRecipesDisplay() {
+    const recipesList = document.getElementById("recipes-list");
+    const recipesEmpty = document.getElementById("recipes-empty");
+    const recipesCount = document.getElementById("recipes-count");
+    const recipesFilters = document.getElementById("recipe-filters");
+
+    // Apply filters
+    let filteredRecipes = [...currentRecipes];
+
+    const validOnly = document.getElementById("filter-valid")?.checked;
+    const warningsOnly = document.getElementById("filter-warnings")?.checked;
+    const categoryFilter = document.getElementById("filter-category")?.value;
+
+    if (validOnly) {
+      filteredRecipes = filteredRecipes.filter(
+        (recipe) => recipe.isValid !== false
+      );
+    }
+
+    if (warningsOnly) {
+      filteredRecipes = filteredRecipes.filter(
+        (recipe) => recipe.warnings && recipe.warnings.length > 0
+      );
+    }
+
+    if (categoryFilter) {
+      filteredRecipes = filteredRecipes.filter(
+        (recipe) => recipe.category === categoryFilter
+      );
+    }
+
+    recipesCount.textContent = `(${filteredRecipes.length})`;
+
+    if (currentRecipes.length > 0) {
+      recipesFilters.classList.remove("hidden");
+    } else {
+      recipesFilters.classList.add("hidden");
+    }
+
+    if (filteredRecipes.length === 0) {
+      if (currentRecipes.length === 0) {
+        recipesList.innerHTML = `
+          <div id="recipes-empty" class="text-center" style="padding: 3rem; color: #6b7280;">
+            <p style="font-size: 1.125rem; margin-bottom: 0.5rem;">🍳 No recipes yet</p>
+            <p>Generate your first recipe using the ingredients you've added!</p>
+          </div>
+        `;
+      } else {
+        recipesList.innerHTML =
+          '<div class="text-center" style="padding: 2rem; color: #6b7280;"><p>No recipes match your filters</p></div>';
+      }
+      return;
+    }
+
+    recipesList.innerHTML = filteredRecipes
+      .map((recipe) => createRecipeHTML(recipe))
+      .join("");
+  }
+
+  // Create recipe HTML
+  function createRecipeHTML(recipe) {
+    const userVote = VoteStorage.getUserVote(recipe.id, currentUser?.id);
+    const voteUpClass = userVote === "up" ? "active-up" : "";
+    const voteDownClass = userVote === "down" ? "active-down" : "";
+    const voteCountClass =
+      recipe.votes > 0 ? "positive" : recipe.votes < 0 ? "negative" : "";
+
+    const warningsHTML =
+      recipe.warnings && recipe.warnings.length > 0
+        ? `
+      <div class="recipe-warnings">
+        <div class="recipe-warnings-title">⚠️ Potential Issues:</div>
+        <ul>
+          ${recipe.warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}
+        </ul>
+      </div>
+    `
+        : "";
+
+    const invalidBadge =
+      recipe.isValid === false
+        ? '<span style="background: #fef2f2; color: #dc2626; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem; margin-left: 0.5rem;">Invalid</span>'
+        : "";
+
+    return `
+      <div class="card recipe-card" data-recipe-id="${recipe.id}">
+        <div class="collapsible" id="recipe-${recipe.id}">
+          <div class="collapsible-header" onclick="toggleCollapsible('recipe-${recipe.id}')">
+            <div style="flex: 1;">
+              <h3 class="collapsible-title">
+                ${escapeHtml(recipe.title)}${invalidBadge}
+              </h3>
+              <div class="recipe-meta">
+                <span>🏷️ ${escapeHtml(recipe.category)}</span>
+                <span>⚡ ${escapeHtml(recipe.difficulty)}</span>
+                <span>⏱️ ${escapeHtml(recipe.prepTime)}</span>
+                <span>🍽️ ${recipe.servings} servings</span>
+              </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 1rem;">
+              <div class="vote-controls">
+                <button class="vote-btn ${voteUpClass}" onclick="voteRecipe(event, '${recipe.id}', 'up')">
+                  ▲
+                </button>
+                <span class="vote-count ${voteCountClass}">${recipe.votes || 0}</span>
+                <button class="vote-btn ${voteDownClass}" onclick="voteRecipe(event, '${recipe.id}', 'down')">
+                  ▼
+                </button>
+              </div>
+              <span class="collapsible-toggle">▼</span>
+            </div>
+          </div>
+          <div class="collapsible-content">
+            ${warningsHTML}
+            
+            ${recipe.description ? `<p style="color: #6b7280; margin-bottom: 1rem;">${escapeHtml(recipe.description)}</p>` : ""}
+            
+            <div class="grid grid-2">
+              <div>
+                <h4 class="font-bold mb-4">Ingredients:</h4>
+                <ul style="list-style: disc; margin-left: 1.5rem;">
+                  ${recipe.ingredients.map((ing) => `<li>${escapeHtml(ing)}</li>`).join("")}
+                </ul>
+              </div>
+              
+              <div>
+                <h4 class="font-bold mb-4">Instructions:</h4>
+                <ol style="list-style: decimal; margin-left: 1.5rem;">
+                  ${recipe.instructions.map((step) => `<li style="margin-bottom: 0.5rem;">${escapeHtml(step)}</li>`).join("")}
+                </ol>
+              </div>
+            </div>
+            
+            ${
+              recipe.tips
+                ? `
+              <div style="background: #f0f9ff; border-left: 4px solid #0ea5e9; padding: 1rem; margin-top: 1rem;">
+                <h5 class="font-bold" style="color: #0c4a6e; margin-bottom: 0.5rem;">💡 Chef's Tips:</h5>
+                <p style="color: #0c4a6e;">${escapeHtml(recipe.tips)}</p>
+              </div>
+            `
+                : ""
+            }
+            
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e5e7eb;">
+              <div style="font-size: 0.75rem; color: #6b7280;">
+                Generated ${new Date(recipe.createdAt).toLocaleString()} • 
+                Model: ${recipe.model || "gpt-3.5-turbo"}
+              </div>
+              <button class="btn btn-danger btn-sm" onclick="removeRecipe('${recipe.id}')">
+                Delete Recipe
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // Vote on recipe
+  window.voteRecipe = function (event, recipeId, voteType) {
+    event.stopPropagation(); // Prevent collapsible toggle
+
+    if (!currentUser) {
+      window.showError?.("User not found");
+      return;
+    }
+
+    const currentVote = VoteStorage.getUserVote(recipeId, currentUser.id);
+    const newVote = currentVote === voteType ? "neutral" : voteType;
+
+    VoteStorage.vote(recipeId, currentUser.id, newVote);
+
+    // Reload recipes to update vote counts
+    loadRecipes();
+
+    // TODO: Broadcast vote via WebSocket
+  };
+
+  // Remove recipe
+  window.removeRecipe = function (recipeId) {
+    const recipe = currentRecipes.find((r) => r.id === recipeId);
+    if (!recipe) return;
+
+    if (confirm(`Delete recipe "${recipe.title}"?`)) {
+      RecipeStorage.remove(recipeId);
+      loadRecipes();
+
+      // TODO: Broadcast recipe removal via WebSocket
+    }
+  };
+
+  // Utility function to escape HTML
+  function escapeHtml(text) {
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // Initialize when DOM is ready
+  document.addEventListener("DOMContentLoaded", initRecipeManager);
+
+  // Expose functions for other components
+  window.refreshRecipes = loadRecipes;
+  window.getRecipes = () => currentRecipes;
+</script>

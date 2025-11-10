@@ -1,0 +1,436 @@
+---
+// IngredientManager component for collaborative ingredient management
+---
+
+<div class="card">
+  <div class="collapsible" id="ingredients-section">
+    <div
+      class="collapsible-header"
+      onclick="toggleCollapsible('ingredients-section')"
+    >
+      <h2 class="collapsible-title">
+        Ingredients <span id="ingredients-count">(0)</span>
+      </h2>
+      <span class="collapsible-toggle">▼</span>
+    </div>
+    <div class="collapsible-content">
+      <!-- Add Ingredient Form -->
+      <form id="add-ingredient-form" class="mb-4">
+        <div style="display: flex; gap: 0.5rem;">
+          <input
+            type="text"
+            id="new-ingredient"
+            class="form-input"
+            placeholder="Add an ingredient..."
+            style="flex: 1;"
+            maxlength="100"
+          />
+          <button type="submit" class="btn btn-primary"> Add </button>
+        </div>
+      </form>
+
+      <!-- Ingredient List -->
+      <div id="ingredients-list" class="item-list">
+        <div
+          id="ingredients-empty"
+          class="text-center"
+          style="padding: 2rem; color: #6b7280;"
+        >
+          <p>No ingredients added yet.</p>
+          <p class="text-sm">
+            Start by adding some ingredients you have available!
+          </p>
+        </div>
+      </div>
+
+      <!-- Blacklist Section -->
+      <div class="collapsible mt-4" id="blacklist-section">
+        <div
+          class="collapsible-header"
+          onclick="toggleCollapsible('blacklist-section')"
+        >
+          <h3 class="collapsible-title">
+            Blacklisted Ingredients <span id="blacklist-count">(0)</span>
+          </h3>
+          <span class="collapsible-toggle">▼</span>
+        </div>
+        <div class="collapsible-content">
+          <p class="text-sm" style="color: #6b7280; margin-bottom: 1rem;">
+            Ingredients to avoid in recipes (dietary restrictions, dislikes,
+            etc.)
+          </p>
+
+          <form id="add-blacklist-form" class="mb-4">
+            <div style="display: flex; gap: 0.5rem;">
+              <input
+                type="text"
+                id="new-blacklist-item"
+                class="form-input"
+                placeholder="Add ingredient to blacklist..."
+                style="flex: 1;"
+                maxlength="100"
+              />
+              <button type="submit" class="btn btn-secondary btn-sm">
+                Blacklist
+              </button>
+            </div>
+          </form>
+
+          <div id="blacklist-list" class="item-list">
+            <div
+              id="blacklist-empty"
+              class="text-center"
+              style="padding: 1rem; color: #6b7280; font-size: 0.875rem;"
+            >
+              No blacklisted ingredients
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import {
+    IngredientsStorage,
+    BlacklistStorage,
+    UserStorage,
+    RecipeStorage,
+  } from "/scripts/storage.js";
+
+  let currentIngredients = [];
+  let currentBlacklist = [];
+  let currentUser = null;
+
+  // Initialize component
+  function initIngredientManager() {
+    currentUser = UserStorage.get();
+    loadIngredients();
+    loadBlacklist();
+    setupEventListeners();
+  }
+
+  // Setup form event listeners
+  function setupEventListeners() {
+    // Add ingredient form
+    document
+      .getElementById("add-ingredient-form")
+      .addEventListener("submit", (e) => {
+        e.preventDefault();
+        const ingredientName = document
+          .getElementById("new-ingredient")
+          .value.trim();
+        addIngredient(ingredientName);
+      });
+
+    // Add blacklist form
+    document
+      .getElementById("add-blacklist-form")
+      .addEventListener("submit", (e) => {
+        e.preventDefault();
+        const ingredientName = document
+          .getElementById("new-blacklist-item")
+          .value.trim();
+        addToBlacklist(ingredientName);
+      });
+  }
+
+  // Toggle collapsible sections
+  window.toggleCollapsible = function (sectionId) {
+    const section = document.getElementById(sectionId);
+    section.classList.toggle("collapsed");
+  };
+
+  // Load ingredients from storage
+  function loadIngredients() {
+    currentIngredients = IngredientsStorage.get();
+    updateIngredientsDisplay();
+  }
+
+  // Load blacklist from storage
+  function loadBlacklist() {
+    currentBlacklist = BlacklistStorage.get();
+    updateBlacklistDisplay();
+  }
+
+  // Update ingredients display
+  function updateIngredientsDisplay() {
+    const ingredientsList = document.getElementById("ingredients-list");
+    const ingredientsEmpty = document.getElementById("ingredients-empty");
+    const ingredientsCount = document.getElementById("ingredients-count");
+
+    console.log("Updating ingredients display:", currentIngredients);
+    ingredientsCount.textContent = `(${currentIngredients.length})`;
+
+    if (currentIngredients.length === 0) {
+      ingredientsList.innerHTML = `
+        <div id="ingredients-empty" class="text-center" style="padding: 2rem; color: #6b7280;">
+          <p>No ingredients added yet.</p>
+          <p class="text-sm">Start by adding some ingredients you have available!</p>
+        </div>
+      `;
+      return;
+    }
+
+    const ingredientsHTML = currentIngredients
+      .map(
+        (ingredient) => `
+      <div class="item-list-item" data-ingredient-id="${ingredient.id}">
+        <div class="item-content">
+          <div class="item-title">${escapeHtml(ingredient.name)}</div>
+          <div class="item-meta">
+            Added by ${escapeHtml(ingredient.addedBy)} • 
+            ${new Date(ingredient.addedAt).toLocaleDateString()}
+          </div>
+        </div>
+        <div class="item-actions">
+          <button 
+            class="btn btn-ghost btn-sm" 
+            onclick="blacklistIngredient('${ingredient.id}')"
+            title="Add to blacklist"
+          >
+            🚫
+          </button>
+          <button 
+            class="btn btn-danger btn-sm" 
+            onclick="removeIngredient('${ingredient.id}')"
+            title="Remove ingredient"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+    `
+      )
+      .join("");
+
+    console.log("Generated HTML length:", ingredientsHTML.length);
+    ingredientsList.innerHTML = ingredientsHTML;
+  }
+
+  // Update blacklist display
+  function updateBlacklistDisplay() {
+    const blacklistList = document.getElementById("blacklist-list");
+    const blacklistCount = document.getElementById("blacklist-count");
+
+    console.log("Updating blacklist display:", currentBlacklist);
+    blacklistCount.textContent = `(${currentBlacklist.length})`;
+
+    if (currentBlacklist.length === 0) {
+      blacklistList.innerHTML = `
+        <div id="blacklist-empty" class="text-center" style="padding: 1rem; color: #6b7280; font-size: 0.875rem;">
+          No blacklisted ingredients
+        </div>
+      `;
+      return;
+    }
+
+    const blacklistHTML = currentBlacklist
+      .map(
+        (item) => `
+      <div class="item-list-item">
+        <div class="item-content">
+          <div class="item-title">${escapeHtml(item)}</div>
+        </div>
+        <div class="item-actions">
+          <button 
+            class="btn btn-secondary btn-sm" 
+            onclick="removeFromBlacklist('${item}')"
+            title="Remove from blacklist"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+    `
+      )
+      .join("");
+
+    console.log("Generated blacklist HTML length:", blacklistHTML.length);
+    blacklistList.innerHTML = blacklistHTML;
+  }
+
+  // Add ingredient
+  function addIngredient(ingredientName) {
+    console.log("Adding ingredient:", ingredientName);
+
+    if (!ingredientName.trim()) {
+      return;
+    }
+
+    // Check if ingredient already exists
+    const exists = currentIngredients.some(
+      (ing) => ing.name.toLowerCase() === ingredientName.toLowerCase()
+    );
+
+    if (exists) {
+      window.showError?.("This ingredient is already in your list");
+      return;
+    }
+
+    // Check if ingredient is blacklisted
+    if (currentBlacklist.includes(ingredientName.toLowerCase())) {
+      if (
+        confirm(
+          `"${ingredientName}" is blacklisted. Remove from blacklist and add to ingredients?`
+        )
+      ) {
+        BlacklistStorage.remove(ingredientName);
+        loadBlacklist();
+      } else {
+        return;
+      }
+    }
+
+    const newIngredient = IngredientsStorage.add({
+      name: ingredientName,
+      addedBy: currentUser?.name || "Unknown",
+    });
+    console.log("New ingredient added:", newIngredient);
+
+    loadIngredients();
+
+    // Clear the form
+    document.getElementById("new-ingredient").value = "";
+
+    // Mark existing recipes as potentially invalid
+    RecipeStorage.markInvalidRecipes(currentIngredients);
+
+    // TODO: Broadcast ingredient addition via WebSocket
+  }
+
+  // Remove ingredient
+  window.removeIngredient = function (ingredientId) {
+    const ingredient = currentIngredients.find(
+      (ing) => ing.id === ingredientId
+    );
+    if (!ingredient) return;
+
+    if (confirm(`Remove "${ingredient.name}" from ingredients?`)) {
+      IngredientsStorage.remove(ingredientId);
+      loadIngredients();
+
+      // Mark existing recipes as potentially invalid
+      RecipeStorage.markInvalidRecipes(IngredientsStorage.get());
+
+      // TODO: Broadcast ingredient removal via WebSocket
+    }
+  };
+
+  // Add ingredient to blacklist
+  window.blacklistIngredient = function (ingredientId) {
+    const ingredient = currentIngredients.find(
+      (ing) => ing.id === ingredientId
+    );
+    if (!ingredient) return;
+
+    if (
+      confirm(
+        `Add "${ingredient.name}" to blacklist and remove from ingredients?`
+      )
+    ) {
+      BlacklistStorage.add(ingredient.name);
+      IngredientsStorage.remove(ingredientId);
+
+      loadIngredients();
+      loadBlacklist();
+
+      // Mark existing recipes as potentially invalid
+      RecipeStorage.markInvalidRecipes(IngredientsStorage.get());
+
+      // TODO: Broadcast changes via WebSocket
+    }
+  };
+
+  // Add to blacklist
+  function addToBlacklist(ingredientName) {
+    if (!ingredientName.trim()) return;
+
+    // Check if already blacklisted
+    if (currentBlacklist.includes(ingredientName.toLowerCase())) {
+      window.showError?.("This ingredient is already blacklisted");
+      return;
+    }
+
+    BlacklistStorage.add(ingredientName);
+    loadBlacklist();
+
+    // Clear the form
+    document.getElementById("new-blacklist-item").value = "";
+
+    // Remove from ingredients if it exists
+    const existingIngredient = currentIngredients.find(
+      (ing) => ing.name.toLowerCase() === ingredientName.toLowerCase()
+    );
+
+    if (existingIngredient) {
+      IngredientsStorage.remove(existingIngredient.id);
+      loadIngredients();
+      RecipeStorage.markInvalidRecipes(IngredientsStorage.get());
+    }
+
+    // TODO: Broadcast blacklist addition via WebSocket
+  }
+
+  // Remove from blacklist
+  window.removeFromBlacklist = function (ingredientName) {
+    if (confirm(`Remove "${ingredientName}" from blacklist?`)) {
+      BlacklistStorage.remove(ingredientName);
+      loadBlacklist();
+
+      // TODO: Broadcast blacklist removal via WebSocket
+    }
+  };
+
+  // Utility function to escape HTML
+  function escapeHtml(text) {
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // Auto-complete suggestions (could be enhanced with common ingredients)
+  function setupAutoComplete() {
+    const commonIngredients = [
+      "chicken breast",
+      "ground beef",
+      "salmon",
+      "eggs",
+      "milk",
+      "butter",
+      "cheese",
+      "onion",
+      "garlic",
+      "tomatoes",
+      "lettuce",
+      "carrots",
+      "potatoes",
+      "rice",
+      "pasta",
+      "bread",
+      "flour",
+      "sugar",
+      "salt",
+      "pepper",
+      "olive oil",
+      "bell peppers",
+      "mushrooms",
+      "broccoli",
+      "spinach",
+      "apples",
+      "bananas",
+    ];
+
+    // Simple autocomplete could be added here
+    // For now, we'll keep it simple without external libraries
+  }
+
+  // Initialize when DOM is ready
+  document.addEventListener("DOMContentLoaded", initIngredientManager);
+
+  // Expose functions for other components
+  window.getIngredients = () => currentIngredients;
+  window.getBlacklist = () => currentBlacklist;
+  window.refreshIngredients = loadIngredients;
+</script>

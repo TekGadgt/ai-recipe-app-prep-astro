@@ -1,0 +1,459 @@
+---
+import Layout from "../layouts/Layout.astro";
+---
+
+<Layout title="Pantry Party - Home">
+  <div class="grid">
+    <!-- Welcome Section -->
+    <div class="card">
+      <div class="card-header">
+        <h1 class="card-title">Welcome to Pantry Party! 🍽️</h1>
+        <p class="card-description">
+          Collaborate with friends to generate delicious recipes using
+          ingredients you have on hand.
+        </p>
+      </div>
+      <div class="card-content">
+        <div class="grid grid-2">
+          <div>
+            <h3 class="font-bold mb-4">How it works:</h3>
+            <ul style="list-style: disc; margin-left: 1.5rem; color: #6b7280;">
+              <li>Create or join a session with friends</li>
+              <li>Add ingredients you have available</li>
+              <li>Set context (grilling, dessert, drinks, etc.)</li>
+              <li>Generate AI-powered recipe suggestions</li>
+              <li>Vote on your favorites together</li>
+            </ul>
+          </div>
+          <div>
+            <h3 class="font-bold mb-4">Features:</h3>
+            <ul style="list-style: disc; margin-left: 1.5rem; color: #6b7280;">
+              <li>Real-time collaboration</li>
+              <li>Personalized recipe generation</li>
+              <li>Ingredient blacklisting</li>
+              <li>Recipe voting system</li>
+              <li>Works offline as a PWA</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Start Options -->
+    <div class="grid grid-2">
+      <!-- Create Session -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Start a New Session</h2>
+          <p class="card-description">
+            Create a new collaborative cooking session and invite friends
+          </p>
+        </div>
+        <div class="card-content">
+          <form id="create-session-form">
+            <div class="form-group">
+              <label for="host-name" class="form-label">Your Name</label>
+              <input
+                type="text"
+                id="host-name"
+                class="form-input"
+                placeholder="Enter your name"
+                required
+                maxlength="50"
+              />
+            </div>
+            <div class="form-group">
+              <label for="openai-key" class="form-label">OpenAI API Key</label>
+              <input
+                type="password"
+                id="openai-key"
+                class="form-input"
+                placeholder="sk-..."
+                required
+              />
+              <div
+                class="form-error"
+                style="font-size: 0.75rem; color: #6b7280; margin-top: 0.25rem;"
+              >
+                Your API key is stored locally and never sent to our servers.
+                <a
+                  href="https://platform.openai.com/api-keys"
+                  target="_blank"
+                  style="color: #2563eb;">Get your key here</a
+                >
+              </div>
+            </div>
+            <button
+              type="submit"
+              class="btn btn-primary btn-lg"
+              style="width: 100%;"
+            >
+              Create Session
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Join Session -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Join Existing Session</h2>
+          <p class="card-description">
+            Enter a session code to join friends in their cooking session
+          </p>
+        </div>
+        <div class="card-content">
+          <form id="join-session-form">
+            <div class="form-group">
+              <label for="participant-name" class="form-label">Your Name</label>
+              <input
+                type="text"
+                id="participant-name"
+                class="form-input"
+                placeholder="Enter your name"
+                required
+                maxlength="50"
+              />
+            </div>
+            <div class="form-group">
+              <label for="session-code" class="form-label">Session Code</label>
+              <input
+                type="text"
+                id="session-code"
+                class="form-input"
+                placeholder="Enter 6-digit code"
+                required
+                pattern="[A-Za-z0-9]{6}"
+                maxlength="6"
+                style="text-transform: uppercase;"
+              />
+            </div>
+            <div class="form-group">
+              <label for="participant-openai-key" class="form-label"
+                >OpenAI API Key (Optional)</label
+              >
+              <input
+                type="password"
+                id="participant-openai-key"
+                class="form-input"
+                placeholder="sk-... (for recipe generation)"
+              />
+              <div
+                class="form-error"
+                style="font-size: 0.75rem; color: #6b7280; margin-top: 0.25rem;"
+              >
+                Only needed if you want to generate recipes yourself
+              </div>
+            </div>
+            <button
+              type="submit"
+              class="btn btn-secondary btn-lg"
+              style="width: 100%;"
+            >
+              Join Session
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recent Sessions -->
+    <div class="card" id="recent-sessions" style="display: none;">
+      <div class="card-header">
+        <h2 class="card-title">Recent Sessions</h2>
+        <p class="card-description">Continue from where you left off</p>
+      </div>
+      <div class="card-content">
+        <div id="recent-sessions-list" class="item-list">
+          <!-- Recent sessions will be populated here -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Error Modal -->
+  <div id="error-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Error</h3>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p id="error-message"></p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeErrorModal()"
+          >Close</button
+        >
+      </div>
+    </div>
+  </div>
+</Layout>
+
+<style>
+  /* Modal styles */
+  .modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+
+  .modal-content {
+    background: white;
+    border-radius: 12px;
+    max-width: 400px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+  }
+
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem 1.5rem 0;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .modal-header h3 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #1f2937;
+  }
+
+  .modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #6b7280;
+    padding: 0;
+    width: 2rem;
+    height: 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .modal-body {
+    padding: 1.5rem;
+  }
+
+  .modal-footer {
+    padding: 0 1.5rem 1.5rem;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+  }
+
+  #session-code {
+    text-transform: uppercase;
+  }
+</style>
+
+<script type="module">
+  import {
+    UserStorage,
+    SessionStorage,
+    OpenAIStorage,
+    generateId,
+  } from "/scripts/storage.js";
+  import { isValidApiKey, testApiKey } from "/scripts/openai.js";
+
+  // Show error modal
+  function showError(message) {
+    document.getElementById("error-message").textContent = message;
+    document.getElementById("error-modal").style.display = "flex";
+  }
+
+  // Close error modal
+  window.closeErrorModal = function () {
+    document.getElementById("error-modal").style.display = "none";
+  };
+
+  // Generate session code
+  function generateSessionCode() {
+    return Math.random().toString(36).substr(2, 6).toUpperCase();
+  }
+
+  // Create session form handler
+  document
+    .getElementById("create-session-form")
+    .addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const hostName = document.getElementById("host-name").value.trim();
+      const apiKey = document.getElementById("openai-key").value.trim();
+
+      if (!hostName) {
+        showError("Please enter your name");
+        return;
+      }
+
+      if (!isValidApiKey(apiKey)) {
+        showError("Please enter a valid OpenAI API key");
+        return;
+      }
+
+      // Show loading state
+      const submitBtn = e.target.querySelector('button[type="submit"]');
+      const originalText = submitBtn.textContent;
+      submitBtn.innerHTML = '<span class="spinner"></span> Testing API Key...';
+      submitBtn.disabled = true;
+
+      try {
+        // Test API key
+        const testResult = await testApiKey(apiKey);
+        if (!testResult.success) {
+          showError(`API Key Error: ${testResult.message}`);
+          return;
+        }
+
+        // Store API key and create user
+        OpenAIStorage.set(apiKey);
+        const user = UserStorage.create(hostName);
+
+        // Create session
+        const sessionCode = generateSessionCode();
+        const session = SessionStorage.create(sessionCode, user.id, user.name);
+
+        // Redirect to session page
+        window.location.href = `/session?code=${sessionCode}&host=true`;
+      } catch (error) {
+        showError(`Error: ${error.message}`);
+      } finally {
+        submitBtn.textContent = originalText;
+        submitBtn.disabled = false;
+      }
+    });
+
+  // Join session form handler
+  document
+    .getElementById("join-session-form")
+    .addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const participantName = document
+        .getElementById("participant-name")
+        .value.trim();
+      const sessionCode = document
+        .getElementById("session-code")
+        .value.trim()
+        .toUpperCase();
+      const apiKey = document
+        .getElementById("participant-openai-key")
+        .value.trim();
+
+      if (!participantName) {
+        showError("Please enter your name");
+        return;
+      }
+
+      if (!sessionCode || sessionCode.length !== 6) {
+        showError("Please enter a valid 6-character session code");
+        return;
+      }
+
+      // If API key is provided, validate it
+      if (apiKey && !isValidApiKey(apiKey)) {
+        showError("Invalid OpenAI API key format");
+        return;
+      }
+
+      // Show loading state
+      const submitBtn = e.target.querySelector('button[type="submit"]');
+      const originalText = submitBtn.textContent;
+      submitBtn.innerHTML = '<span class="spinner"></span> Joining Session...';
+      submitBtn.disabled = true;
+
+      try {
+        // Test API key if provided
+        if (apiKey) {
+          const testResult = await testApiKey(apiKey);
+          if (!testResult.success) {
+            showError(`API Key Error: ${testResult.message}`);
+            return;
+          }
+          OpenAIStorage.set(apiKey);
+        }
+
+        // Create user
+        const user = UserStorage.create(participantName);
+
+        // Redirect to session page (session validation will happen there)
+        window.location.href = `/session?code=${sessionCode}&participant=${user.id}`;
+      } catch (error) {
+        showError(`Error: ${error.message}`);
+      } finally {
+        submitBtn.textContent = originalText;
+        submitBtn.disabled = false;
+      }
+    });
+
+  // Auto-format session code input
+  document.getElementById("session-code").addEventListener("input", (e) => {
+    e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  });
+
+  // Check for existing session on page load
+  document.addEventListener("DOMContentLoaded", () => {
+    const existingSession = SessionStorage.get();
+    const existingUser = UserStorage.get();
+
+    if (existingSession && existingUser) {
+      // Show option to continue existing session
+      const recentSessionsCard = document.getElementById("recent-sessions");
+      const recentSessionsList = document.getElementById(
+        "recent-sessions-list"
+      );
+
+      recentSessionsList.innerHTML = `
+        <div class="item-list-item">
+          <div class="item-content">
+            <div class="item-title">Session ${existingSession.id}</div>
+            <div class="item-meta">
+              Host: ${existingSession.hostName} • 
+              ${existingSession.participants.length} participant(s) •
+              ${new Date(existingSession.lastActivity).toLocaleDateString()}
+            </div>
+          </div>
+          <div class="item-actions">
+            <button class="btn btn-primary btn-sm" onclick="continueSession()">
+              Continue
+            </button>
+            <button class="btn btn-ghost btn-sm" onclick="clearSession()">
+              Clear
+            </button>
+          </div>
+        </div>
+      `;
+
+      recentSessionsCard.style.display = "block";
+    }
+  });
+
+  // Continue existing session
+  window.continueSession = function () {
+    const session = SessionStorage.get();
+    if (session) {
+      const isHost = UserStorage.get()?.id === session.hostId;
+      window.location.href = `/session?code=${session.id}&${isHost ? "host=true" : "continue=true"}`;
+    }
+  };
+
+  // Clear existing session
+  window.clearSession = function () {
+    if (confirm("Are you sure you want to clear your session data?")) {
+      SessionStorage.clear();
+      UserStorage.clear();
+      document.getElementById("recent-sessions").style.display = "none";
+    }
+  };
+</script>
