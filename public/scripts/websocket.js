@@ -102,6 +102,11 @@ class WebSocketManager {
         );
       }
 
+      // Special debugging for context updates
+      if (message.type === "context:updated") {
+        console.log("DEBUGGING: About to emit context:updated event", message);
+      }
+
       // Emit message to listeners
       this.emit(message.type, message);
     } catch (error) {
@@ -312,6 +317,26 @@ class WebSocketManager {
    */
   updateContext(context) {
     this.send("context:update", { context });
+  }
+
+  /**
+   * Request combined context from all session participants
+   */
+  requestSessionContext() {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error("Session context request timed out"));
+      }, 5000);
+
+      const handleResponse = (message) => {
+        clearTimeout(timeout);
+        this.off("session:context", handleResponse);
+        resolve(message.combinedContext);
+      };
+
+      this.on("session:context", handleResponse);
+      this.send("session:context:request", {});
+    });
   }
 
   /**
@@ -727,8 +752,26 @@ class SessionSyncManager {
    */
   handleContextUpdated(message) {
     const { context } = message;
-    this.storage.setContext(context);
-    this.refreshContextDisplay();
+    console.log(
+      "DEBUGGING: handleContextUpdated called with context:",
+      context
+    );
+
+    // Set syncing flag to prevent race conditions
+    if (window.syncState) {
+      window.syncState.syncing = true;
+    }
+
+    try {
+      this.storage.set(context);
+      this.refreshContextDisplay();
+      console.log("DEBUGGING: Context updated and display refreshed");
+    } finally {
+      // Clear syncing flag
+      if (window.syncState) {
+        window.syncState.syncing = false;
+      }
+    }
   }
 
   /**
@@ -785,7 +828,7 @@ class SessionSyncManager {
       });
 
       // Update context
-      this.storage.setContext(session.context);
+      this.storage.set(session.context);
 
       // Update recipes
       this.storage.clearRecipes();

@@ -319,7 +319,7 @@
 
       const recipe = await generateRecipe({
         ingredients: ingredients,
-        context: ContextStorage.get(),
+        context: ContextStorage.get(), // Use host's context (synced to all users)
         blacklist: BlacklistStorage.get(),
       });
 

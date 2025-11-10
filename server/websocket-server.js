@@ -686,11 +686,21 @@ async function handleContextUpdate(ws, data) {
   const session = getSession(clientInfo.sessionId);
   if (!session) return;
 
+  // Only allow host to update context
+  if (clientInfo.userId !== session.hostId) {
+    console.log(
+      `Non-host ${clientInfo.username} attempted to update context, ignoring`
+    );
+    return;
+  }
+
   const { context } = data;
   session.context = context;
   updateSessionActivity(clientInfo.sessionId);
 
-  // Broadcast to all participants
+  console.log(`Host ${clientInfo.username} updated context:`, context);
+
+  // Broadcast to all participants (excluding host)
   broadcastToSession(
     clientInfo.sessionId,
     {

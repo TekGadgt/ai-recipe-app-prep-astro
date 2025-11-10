@@ -66,8 +66,19 @@ import SessionControls from "../components/SessionControls.astro";
               >
                 <div style="font-size: 0.75rem; color: #6b7280;">
                   <span id="context-char-count">0</span>/500 characters
+                  <span
+                    id="host-only-indicator"
+                    class="hidden"
+                    style="color: #f59e0b; margin-left: 0.5rem;"
+                  >
+                    • Host only
+                  </span>
                 </div>
-                <button type="submit" class="btn btn-secondary btn-sm">
+                <button
+                  type="submit"
+                  id="context-submit-btn"
+                  class="btn btn-secondary btn-sm"
+                >
                   Update Context
                 </button>
               </div>
@@ -389,6 +400,13 @@ import SessionControls from "../components/SessionControls.astro";
       setRecipes: (recipes) => RecipeStorage.set(recipes),
     };
 
+    // Debug: Check if storage proxy has the right methods
+    console.log("DEBUGGING: storageProxy methods:", Object.keys(storageProxy));
+    console.log(
+      "DEBUGGING: storageProxy.set exists:",
+      typeof storageProxy.set === "function"
+    );
+
     syncManager = new SessionSyncManager(wsManager, storageProxy);
 
     // Setup WebSocket event handlers
@@ -491,19 +509,64 @@ import SessionControls from "../components/SessionControls.astro";
     const contextTextarea = document.getElementById("cooking-context");
     const charCount = document.getElementById("context-char-count");
 
+    console.log(
+      "DEBUGGING: loadContext called, context from storage:",
+      context
+    );
     contextTextarea.value = context;
     charCount.textContent = context.length;
+
+    // Update host-only restrictions
+    updateContextHostRestrictions();
+  }
+
+  // Update context form based on host status
+  function updateContextHostRestrictions() {
+    const contextTextarea = document.getElementById("cooking-context");
+    const submitBtn = document.getElementById("context-submit-btn");
+    const hostIndicator = document.getElementById("host-only-indicator");
+
+    if (isHost) {
+      // Host can edit
+      contextTextarea.disabled = false;
+      contextTextarea.placeholder =
+        "e.g., We're grilling outdoors, Making dessert, Quick lunch ideas, Vegetarian only...";
+      submitBtn.disabled = false;
+      hostIndicator.classList.add("hidden");
+    } else {
+      // Non-host cannot edit
+      contextTextarea.disabled = true;
+      contextTextarea.placeholder =
+        "Only the session host can set the cooking context";
+      submitBtn.disabled = true;
+      hostIndicator.classList.remove("hidden");
+    }
   }
 
   // Context form handler
   document.getElementById("context-form").addEventListener("submit", (e) => {
     e.preventDefault();
+
+    // Only allow host to update context
+    if (!isHost) {
+      window.showError?.(
+        "Only the session host can update the cooking context"
+      );
+      return;
+    }
+
     const context = document.getElementById("cooking-context").value.trim();
+    console.log("DEBUGGING: Context form submitted with:", context);
     ContextStorage.set(context);
 
     // Broadcast context change via WebSocket
     if (wsManager && wsManager.isConnected) {
+      console.log("DEBUGGING: Broadcasting context update via WebSocket");
       wsManager.updateContext(context);
+    } else {
+      console.log(
+        "DEBUGGING: WebSocket not connected, context only stored locally"
+      );
     }
 
     // Show feedback
@@ -571,10 +634,16 @@ import SessionControls from "../components/SessionControls.astro";
     loadContext();
   };
 
-  window.updateHostControls = (isHost, allowRecipeGeneration) => {
+  window.updateHostControls = (newIsHost, allowRecipeGeneration) => {
+    // Update global host status
+    isHost = newIsHost;
+
+    // Update context restrictions based on new host status
+    updateContextHostRestrictions();
+
     // This will be handled by SessionControls component
     if (typeof window.refreshSessionControls === "function") {
-      window.refreshSessionControls(isHost, allowRecipeGeneration);
+      window.refreshSessionControls(newIsHost, allowRecipeGeneration);
     }
   };
 </script>
